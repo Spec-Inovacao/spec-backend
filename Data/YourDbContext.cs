@@ -8,5 +8,7 @@ namespace YourNamespace.Data
         public YourDbContext(DbContextOptions<YourDbContext> options) : base(options) { }
 
         public DbSet<Servico> pservicos { get; set; }
-    }
+        public DbSet<Agendamento> pagendamentos { get; set; }
+        public DbSet<Usuario> pusuarios { get; set; }
+        }
 }

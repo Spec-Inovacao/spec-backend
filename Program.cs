@@ -37,15 +37,21 @@ builder.Services.AddCors(options =>
     });
 });
 
-// Render fornece a porta em PORT; localmente cai no 8080
-var port = Environment.GetEnvironmentVariable("PORT") ?? "8080";
-builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
+// Render fornece a porta em PORT. Localmente PORT não existe,
+// então valem as URLs do launchSettings.json (5241 / 7169).
+var port = Environment.GetEnvironmentVariable("PORT");
+if (!string.IsNullOrWhiteSpace(port))
+{
+    builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
+}
 
 var app = builder.Build();
 
+// Swagger habilitado em todos os ambientes (inclusive no Render)
 app.UseSwagger();
 app.UseSwaggerUI();
 
+// No Render o HTTPS é tratado pelo proxy; redireciona só localmente
 if (app.Environment.IsDevelopment())
 {
     app.UseHttpsRedirection();

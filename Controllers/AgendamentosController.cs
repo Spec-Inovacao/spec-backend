@@ -18,6 +18,15 @@ namespace YourNamespace.Controllers
             _context = context;
         }
 
+        // Npgsql só aceita DateTime UTC em colunas timestamptz.
+        // Sem 'Z'/offset no JSON o Kind chega Unspecified: tratamos como UTC.
+        private static DateTime ParaUtc(DateTime data) => data.Kind switch
+        {
+            DateTimeKind.Utc => data,
+            DateTimeKind.Local => data.ToUniversalTime(),
+            _ => DateTime.SpecifyKind(data, DateTimeKind.Utc)
+        };
+
         // POST: /api/agendamentos
         [HttpPost]
         public async Task<IActionResult> InsertAgendamento([FromBody] InsertAgendamentoDTO dto)
@@ -26,11 +35,16 @@ namespace YourNamespace.Controllers
             if (servico == null || !servico.ativo)
                 return BadRequest("Serviço inválido ou inativo.");
 
-            var dtFim = dto.DtInicio.AddMinutes(servico.tempomin);
+            var cliente = await _context.pusuarios.FindAsync(dto.ClienteId);
+            if (cliente == null)
+                return BadRequest("Cliente não encontrado.");
+
+            var dtInicio = ParaUtc(dto.DtInicio);
+            var dtFim = dtInicio.AddMinutes(servico.tempomin);
 
             // Validações de conflito
             var conflito = await _context.pagendamentos.AnyAsync(a =>
-                a.dtinicio < dtFim && a.dtfim > dto.DtInicio && a.status == "agendado");
+                a.dtinicio < dtFim && a.dtfim > dtInicio && a.status == "agendado");
             if (conflito)
                 return Conflict("Já existe um agendamento neste horário.");
 
@@ -38,8 +52,10 @@ namespace YourNamespace.Controllers
             {
                 clienteid = dto.ClienteId,
                 servicoid = dto.ServicoId,
-                dtinicio = dto.DtInicio,
-                dtfim = dtFim
+                dtinicio = dtInicio,
+                dtfim = dtFim,
+                status = "agendado",
+                reccreatedon = DateTime.UtcNow
             };
 
             _context.pagendamentos.Add(agendamento);

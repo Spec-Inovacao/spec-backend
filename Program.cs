@@ -1,6 +1,13 @@
-using Microsoft.EntityFrameworkCore;
-using YourNamespace.Data;
+using System.Text;
 using DotNetEnv;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.IdentityModel.Tokens;
+using Microsoft.OpenApi.Models;
+using YourNamespace.Data;
+using YourNamespace.Models;
+using YourNamespace.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -17,12 +24,67 @@ if (string.IsNullOrWhiteSpace(connectionString))
         "A variável DEFAULT_CONNECTION não foi encontrada (defina no .env local ou nas Environment Variables do Render).");
 }
 
+var jwtSecret = Environment.GetEnvironmentVariable("JWT_SECRET");
+if (string.IsNullOrWhiteSpace(jwtSecret) || Encoding.UTF8.GetByteCount(jwtSecret) < 32)
+{
+    throw new InvalidOperationException(
+        "A variável JWT_SECRET não foi encontrada ou tem menos de 32 caracteres (defina no .env local ou nas Environment Variables do Render).");
+}
+
 builder.Services.AddDbContext<YourDbContext>(options =>
     options.UseNpgsql(connectionString));
 
+// Autenticação: hash de senha + JWT
+var tokenService = new TokenService(jwtSecret);
+builder.Services.AddSingleton(tokenService);
+builder.Services.AddSingleton<IPasswordHasher<Usuario>, PasswordHasher<Usuario>>();
+
+builder.Services
+    .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        options.MapInboundClaims = false;
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidIssuer = TokenService.Emissor,
+            ValidateAudience = true,
+            ValidAudience = TokenService.Emissor,
+            ValidateIssuerSigningKey = true,
+            IssuerSigningKey = tokenService.Chave,
+            ValidateLifetime = true,
+            ClockSkew = TimeSpan.FromMinutes(1),
+            NameClaimType = "name",
+            RoleClaimType = "role"
+        };
+    });
+builder.Services.AddAuthorization();
+
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
+builder.Services.AddSwaggerGen(c =>
+{
+    // Botão "Authorize" no Swagger para testar endpoints protegidos
+    c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
+    {
+        Name = "Authorization",
+        Type = SecuritySchemeType.Http,
+        Scheme = "bearer",
+        BearerFormat = "JWT",
+        In = ParameterLocation.Header,
+        Description = "Cole apenas o token retornado no login (sem o prefixo 'Bearer')."
+    });
+    c.AddSecurityRequirement(new OpenApiSecurityRequirement
+    {
+        {
+            new OpenApiSecurityScheme
+            {
+                Reference = new OpenApiReference { Type = ReferenceType.SecurityScheme, Id = "Bearer" }
+            },
+            Array.Empty<string>()
+        }
+    });
+});
 
 // CORS: libera o front para chamar a API
 const string PoliticaCors = "PermitirFront";
@@ -57,9 +119,10 @@ if (app.Environment.IsDevelopment())
     app.UseHttpsRedirection();
 }
 
-// CORS entra ANTES de Authorization e do MapControllers
+// CORS entra ANTES de Authentication/Authorization e do MapControllers
 app.UseCors(PoliticaCors);
 
+app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
 

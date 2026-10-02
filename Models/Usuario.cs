@@ -8,5 +8,6 @@ namespace YourNamespace.Models
         public string telefone { get; set; }
         public bool admin { get; set; }
         public DateTime reccreatedon { get; set; }
+        public string? senhahash { get; set; }
     }
 }
